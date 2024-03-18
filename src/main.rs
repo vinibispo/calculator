@@ -4,8 +4,10 @@ use std::{
 
 mod token;
 mod interpreter;
+mod lexer;
 
-use interpreter::Intepreter;
+use interpreter::Interpreter;
+use lexer::Lexer;
 
 fn main() {
     loop {
@@ -21,7 +23,8 @@ fn main() {
         if input == "exit" {
             break;
         }
-        let mut interpreter = Intepreter::new(input.to_string());
+        let mut lexer = Lexer::new(input.to_string());
+        let mut interpreter = Interpreter::new(&mut lexer);
         let result = interpreter.expr();
         match result {
             Ok(value) => println!("{}", value),
