@@ -50,23 +50,36 @@ impl Lexer {
             if self.current_char.is_numeric() {
                 return Some(Token::new(TokenKind::Number, self.integer()));
             }
-            if self.current_char == '+' {
-                self.advance();
-                return Some(Token::new(TokenKind::Plus, "+".to_string()));
+
+            match self.current_char {
+                '+' => {
+                    self.advance();
+                    return Some(Token::new(TokenKind::Plus, "+".to_string()));
+                }
+                '-' => {
+                    self.advance();
+                    return Some(Token::new(TokenKind::Minus, "-".to_string()));
+                }
+                '*' => {
+                    self.advance();
+                    return Some(Token::new(TokenKind::Multiply, "*".to_string()));
+                }
+                '/' => {
+                    self.advance();
+                    return Some(Token::new(TokenKind::Divide, "/".to_string()));
+                }
+                '(' => {
+                    self.advance();
+                    return Some(Token::new(TokenKind::LParen, "(".to_string()));
+                }
+                ')' => {
+                    self.advance();
+                    return Some(Token::new(TokenKind::RParen, ")".to_string()));
+                }
+                _ => {
+                    return Some(Token::new(TokenKind::EOF, "".to_string()));
+                }
             }
-            if self.current_char == '-' {
-                self.advance();
-                return Some(Token::new(TokenKind::Minus, "-".to_string()));
-            }
-            if self.current_char == '*' {
-                self.advance();
-                return Some(Token::new(TokenKind::Multiply, "*".to_string()));
-            }
-            if self.current_char == '/' {
-                self.advance();
-                return Some(Token::new(TokenKind::Divide, "/".to_string()));
-            }
-            panic!("Invalid character");
         }
         Some(Token::new(TokenKind::EOF, "".to_string()))
     }
@@ -87,6 +100,159 @@ mod tests {
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Number);
         assert_eq!(token.value, "5".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::EOF);
+        assert_eq!(token.value, "".to_string());
+    }
+
+    #[test]
+    fn test_lexer2() {
+        let mut lexer = Lexer::new("3 + 5 * 2".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "3".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Plus);
+        assert_eq!(token.value, "+".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "5".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Multiply);
+        assert_eq!(token.value, "*".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "2".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::EOF);
+        assert_eq!(token.value, "".to_string());
+    }
+
+    #[test]
+    fn test_lexer3() {
+        let mut lexer = Lexer::new("3 + 5 * 2 - 1".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "3".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Plus);
+        assert_eq!(token.value, "+".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "5".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Multiply);
+        assert_eq!(token.value, "*".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "2".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Minus);
+        assert_eq!(token.value, "-".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "1".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::EOF);
+        assert_eq!(token.value, "".to_string());
+    }
+
+    #[test]
+    fn test_lexer4() {
+        let mut lexer = Lexer::new("3 + 5 * 2 - 1 / 2".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "3".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Plus);
+        assert_eq!(token.value, "+".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "5".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Multiply);
+        assert_eq!(token.value, "*".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "2".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Minus);
+        assert_eq!(token.value, "-".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "1".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Divide);
+        assert_eq!(token.value, "/".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "2".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::EOF);
+        assert_eq!(token.value, "".to_string());
+    }
+
+    #[test]
+    fn test_lexer5() {
+        let mut lexer = Lexer::new("7 + 3 * (10 / (12 / (3 + 1) - 1))".to_string());
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "7".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Plus);
+        assert_eq!(token.value, "+".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "3".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Multiply);
+        assert_eq!(token.value, "*".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::LParen);
+        assert_eq!(token.value, "(".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "10".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Divide);
+        assert_eq!(token.value, "/".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::LParen);
+        assert_eq!(token.value, "(".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "12".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Divide);
+        assert_eq!(token.value, "/".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::LParen);
+        assert_eq!(token.value, "(".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "3".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Plus);
+        assert_eq!(token.value, "+".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "1".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::RParen);
+        assert_eq!(token.value, ")".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Minus);
+        assert_eq!(token.value, "-".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Number);
+        assert_eq!(token.value, "1".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::RParen);
+        assert_eq!(token.value, ")".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::RParen);
+        assert_eq!(token.value, ")".to_string());
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::EOF);
         assert_eq!(token.value, "".to_string());

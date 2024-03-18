@@ -8,6 +8,8 @@ pub enum TokenKind {
     Multiply,
     Divide,
     EOF,
+    LParen,
+    RParen,
 }
 
 #[derive(Debug, PartialEq, Clone)]

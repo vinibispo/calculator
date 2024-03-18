@@ -46,16 +46,23 @@ impl<'a> Interpreter<'a> {
 
     fn factor(&mut self) -> Result<i32, InterpreterError>{
         if let Some(token) = self.current_token.clone() {
-                    if token.kind == TokenKind::Number {
-                        let value = token.value.parse::<i32>().map_err(|_| InterpreterError { message: "Failed to parse integer".to_string() })?;
-                        self.eat(TokenKind::Number)?;
-                        Ok(value)
-                    } else {
-                        Err(InterpreterError { message: "Invalid factor".to_string() })
-                    }
-                } else {
-                    Err(InterpreterError { message: "Unexpected end of input".to_string() })
+            match token.kind {
+                TokenKind::Number => {
+                    self.eat(TokenKind::Number)?;
+                    Ok(token.value.parse::<i32>().unwrap())
                 }
+                TokenKind::LParen => {
+                    self.eat(TokenKind::LParen)?;
+                    let result = self.expr()?;
+                    self.eat(TokenKind::RParen)?;
+                    Ok(result)
+                }
+                _ => Err(InterpreterError { message: "Invalid syntax".to_string() })
+            }
+        }
+        else {
+            Err(InterpreterError { message: "Unexpected end of input".to_string() })
+        }
     }
 
     fn term(&mut self) -> Result<i32, InterpreterError> {
@@ -228,5 +235,19 @@ mod tests {
         let mut lexer = Lexer::new("3+1*2".to_string());
         let mut interpreter = Interpreter::new(&mut lexer);
         assert_eq!(interpreter.expr().unwrap(), 5)
+    }
+
+    #[test]
+    fn test_sum_and_multiplication_with_many_digits() {
+        let mut lexer = Lexer::new("123+456*2".to_string());
+        let mut interpreter = Interpreter::new(&mut lexer);
+        assert_eq!(interpreter.expr().unwrap(), 1035)
+    }
+
+    #[test]
+    fn test_sum_multiplication_and_subtraction_and_division_using_parentheses() {
+        let mut lexer = Lexer::new("7 + 3 * (10 / (12 / (3 + 1) - 1))".to_string());
+        let mut interpreter = Interpreter::new(&mut lexer);
+        assert_eq!(interpreter.expr().unwrap(), 22)
     }
 }
