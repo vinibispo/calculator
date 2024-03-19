@@ -25,6 +25,23 @@ impl BinaryOp {
     }
 }
 
+pub struct UnaryOp {
+    pub expr: AstNode,
+    pub token: Token,
+}
+
+impl Ast for UnaryOp {
+    fn accept(&self, visitor: &mut dyn Visitor) -> Result<i32, String> {
+        visitor.visit_unary_op(self)
+    }
+}
+
+impl UnaryOp {
+    pub fn new(expr: AstNode, token: Token) -> AstNode {
+        Rc::new(RefCell::new(UnaryOp { expr, token }))
+    }
+}
+
 pub struct Num {
     pub token: Token,
     pub value: i32,

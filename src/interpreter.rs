@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 use crate::{
-    ast::{AstNode, BinaryOp, Num},
+    ast::{AstNode, BinaryOp, Num, UnaryOp},
     parser::Parser,
     token::TokenKind,
     visitor::Visitor,
@@ -39,6 +39,15 @@ impl Visitor for Interpreter<'_> {
 
     fn visit_num(&mut self, num: &Num) -> Result<i32, String> {
         Ok(num.value)
+    }
+
+    fn visit_unary_op(&mut self, unary_op: &UnaryOp) -> Result<i32, String> {
+        let expr = self.visit(unary_op.expr.clone())?;
+        match unary_op.token.kind {
+            TokenKind::Plus => Ok(expr),
+            TokenKind::Minus => Ok(-expr),
+            _ => Err("Invalid operator".to_string()),
+        }
     }
 }
 
@@ -216,5 +225,13 @@ mod tests {
         let mut parser = Parser::new(&mut lexer);
         let mut interpreter = Interpreter::new(&mut parser);
         assert_eq!(interpreter.interpret().unwrap(), 22)
+    }
+
+    #[test]
+    fn test_unary_operations() {
+        let mut lexer = Lexer::new("5 - - - + - (3 + 4) - +2".to_string());
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 10)
     }
 }

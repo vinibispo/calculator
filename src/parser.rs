@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use crate::ast::{AstNode, BinaryOp, Num};
+use crate::ast::{AstNode, BinaryOp, Num, UnaryOp};
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
 
@@ -52,16 +52,24 @@ impl<'a> Parser<'a> {
     fn factor(&mut self) -> Result<AstNode, ParserError> {
         if let Some(token) = self.current_token.clone() {
             match token.kind {
+                TokenKind::Plus => {
+                    self.eat(TokenKind::Plus)?;
+                    Ok(UnaryOp::new(self.factor()?, token))
+                },
+                TokenKind::Minus => {
+                    self.eat(TokenKind::Minus)?;
+                    Ok(UnaryOp::new(self.factor()?, token))
+                },
                 TokenKind::Number => {
                     self.eat(TokenKind::Number)?;
                     Ok(Num::new(token))
-                }
+                },
                 TokenKind::LParen => {
                     self.eat(TokenKind::LParen)?;
                     let result = self.expr()?;
                     self.eat(TokenKind::RParen)?;
                     Ok(result)
-                }
+                },
                 _ => Err(ParserError {
                     message: "Invalid syntax".to_string(),
                 }),
@@ -152,6 +160,14 @@ mod tests {
         let mut parser = Parser::new(&mut lexer);
         let result = parser.parse();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parser_with_unary_operator() {
+        let mut lexer = Lexer::new("-3 + 5".to_string());
+        let mut parser = Parser::new(&mut lexer);
+        let result = parser.parse();
+        assert!(result.is_ok());
     }
 
 }
