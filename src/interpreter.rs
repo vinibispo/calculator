@@ -1,11 +1,14 @@
 use std::{error::Error, fmt};
 
-use crate::token::{Token, TokenKind};
-use crate::lexer::Lexer;
+use crate::{
+    ast::{AstNode, BinaryOp, Num},
+    parser::Parser,
+    token::TokenKind,
+    visitor::Visitor,
+};
 
 pub struct Interpreter<'a> {
-    pub lexer: &'a mut Lexer,
-    pub current_token: Option<Token>,
+    pub parser: &'a mut Parser<'a>,
 }
 
 #[derive(Debug)]
@@ -21,233 +24,197 @@ impl fmt::Display for InterpreterError {
 
 impl Error for InterpreterError {}
 
+impl Visitor for Interpreter<'_> {
+    fn visit_binary_op(&mut self, binary_op: &BinaryOp) -> Result<i32, String> {
+        let left = self.visit(binary_op.left.clone())?;
+        let right = self.visit(binary_op.right.clone())?;
+        match binary_op.token.kind {
+            TokenKind::Plus => Ok(left + right),
+            TokenKind::Minus => Ok(left - right),
+            TokenKind::Multiply => Ok(left * right),
+            TokenKind::Divide => Ok(left / right),
+            _ => Err("Invalid operator".to_string()),
+        }
+    }
+
+    fn visit_num(&mut self, num: &Num) -> Result<i32, String> {
+        Ok(num.value)
+    }
+}
+
 impl<'a> Interpreter<'a> {
-    pub fn new(lexer: &'a mut Lexer) -> Interpreter<'a> {
-        let l = lexer;
-        let token = l.get_next_token();
-        Interpreter {
-            lexer: l,
-            current_token: token,
+    pub fn new(parser: &'a mut Parser<'a>) -> Interpreter<'a> {
+        Interpreter { parser }
+    }
+
+    pub fn interpret(&mut self) -> Result<i32, String> {
+        let tree = self.parser.parse();
+        match tree {
+            Ok(tree) => self.visit(tree),
+            Err(e) => Err(e.to_string()),
         }
     }
 
-    fn eat(&mut self, kind: TokenKind) -> Result<(), InterpreterError> {
-        if let Some(token) = self.current_token.clone() {
-            if token.kind == kind {
-                self.current_token = self.lexer.get_next_token();
-                Ok(())
-            } else {
-                Err(InterpreterError { message: "Invalid syntax".to_string() })
-            }
-        } else {
-            Err(InterpreterError { message: "Unexpected end of input".to_string() })
-        }
-    }
-
-    fn factor(&mut self) -> Result<i32, InterpreterError>{
-        if let Some(token) = self.current_token.clone() {
-            match token.kind {
-                TokenKind::Number => {
-                    self.eat(TokenKind::Number)?;
-                    Ok(token.value.parse::<i32>().unwrap())
-                }
-                TokenKind::LParen => {
-                    self.eat(TokenKind::LParen)?;
-                    let result = self.expr()?;
-                    self.eat(TokenKind::RParen)?;
-                    Ok(result)
-                }
-                _ => Err(InterpreterError { message: "Invalid syntax".to_string() })
-            }
-        }
-        else {
-            Err(InterpreterError { message: "Unexpected end of input".to_string() })
-        }
-    }
-
-    fn term(&mut self) -> Result<i32, InterpreterError> {
-        let mut result = self.factor()?;
-        while let Some(token) = self.current_token.clone() {
-            if token.kind == TokenKind::EOF {
-                break;
-            }
-            if ![TokenKind::Multiply, TokenKind::Divide].contains(&token.kind) {
-                break;
-            }
-            match token.kind {
-                TokenKind::Multiply => {
-                    self.eat(TokenKind::Multiply)?;
-                    result *= self.factor()?;
-                }
-                TokenKind::Divide => {
-                    self.eat(TokenKind::Divide)?;
-                    result /= self.factor()?;
-                }
-                _ => break,
-            }
-        };
-        Ok(result)
-    }
-
-     pub fn expr(&mut self) -> Result<i32, InterpreterError> {
-        let mut result = self.term()?;
-        while let Some(token) = self.current_token.clone() {
-            if token.kind == TokenKind::EOF {
-                break;
-            }
-            if ![TokenKind::Plus, TokenKind::Minus].contains(&token.kind) {
-                break;
-            }
-            match token.kind {
-                TokenKind::Plus => {
-                    self.eat(TokenKind::Plus)?;
-                    result += self.term()?;
-                }
-                TokenKind::Minus => {
-                    self.eat(TokenKind::Minus)?;
-                    result -= self.term()?;
-                }
-                _ => break,
-            }
-        };
-        Ok(result)
+    pub fn visit(&mut self, node: AstNode) -> Result<i32, String> {
+        let node = node.borrow();
+        node.accept(self)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer::Lexer;
 
     #[test]
     fn test_sum() {
         let mut lexer = Lexer::new("3+1".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 4)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 4)
     }
 
     #[test]
     fn test_sum_with_many_digits() {
         let mut lexer = Lexer::new("123+456".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 579)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 579)
     }
 
     #[test]
     fn test_sum_with_spaces() {
         let mut lexer = Lexer::new(" 3 + 1".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 4)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 4)
     }
 
     #[test]
     fn test_sum_with_many_spaces() {
         let mut lexer = Lexer::new("  3   +  1".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 4)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 4)
     }
 
     #[test]
     fn test_subtraction() {
         let mut lexer = Lexer::new("3-1".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 2)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 2)
     }
 
     #[test]
     fn test_subtraction_with_many_digits() {
         let mut lexer = Lexer::new("123-456".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), -333)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), -333)
     }
 
     #[test]
     fn test_subtraction_with_spaces() {
         let mut lexer = Lexer::new(" 3 - 1".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 2)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 2)
     }
 
     #[test]
     fn test_subtraction_with_many_spaces() {
         let mut lexer = Lexer::new("  3   -  1".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 2)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 2)
     }
 
     #[test]
     fn test_sum_and_subtraction() {
         let mut lexer = Lexer::new("3+1-1".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 3)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 3)
     }
 
     #[test]
     fn test_sum_and_subtraction_with_many_digits() {
         let mut lexer = Lexer::new("123+456-1".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 578)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 578)
     }
 
     #[test]
     fn test_sum_and_subtraction_with_spaces() {
         let mut lexer = Lexer::new(" 3 + 1 - 1".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 3)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 3)
     }
 
     #[test]
     fn test_multiplication() {
         let mut lexer = Lexer::new("3*2".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 6)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 6)
     }
 
     #[test]
     fn test_multiplication_with_many_digits() {
         let mut lexer = Lexer::new("123*456".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 56088)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 56088)
     }
 
     #[test]
     fn test_multiplication_with_spaces() {
         let mut lexer = Lexer::new(" 3 * 2".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 6)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 6)
     }
 
     #[test]
     fn test_multiplication_with_many_spaces() {
         let mut lexer = Lexer::new("  3   *  2".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 6)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 6)
     }
 
     #[test]
     fn test_division() {
         let mut lexer = Lexer::new("3/2".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 1)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 1)
     }
 
     #[test]
     fn test_sum_and_multiplication() {
         let mut lexer = Lexer::new("3+1*2".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 5)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 5)
     }
 
     #[test]
     fn test_sum_and_multiplication_with_many_digits() {
         let mut lexer = Lexer::new("123+456*2".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 1035)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 1035)
     }
 
     #[test]
     fn test_sum_multiplication_and_subtraction_and_division_using_parentheses() {
         let mut lexer = Lexer::new("7 + 3 * (10 / (12 / (3 + 1) - 1))".to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        assert_eq!(interpreter.expr().unwrap(), 22)
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 22)
     }
 }

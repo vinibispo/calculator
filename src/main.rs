@@ -1,11 +1,15 @@
 use std::io::{stdin, stdout, Write};
 
 mod token;
-mod interpreter;
+mod ast;
 mod lexer;
+mod parser;
+mod visitor;
+mod interpreter;
 
 use interpreter::Interpreter;
 use lexer::Lexer;
+use parser::Parser;
 
 fn main() {
     loop {
@@ -22,8 +26,9 @@ fn main() {
             break;
         }
         let mut lexer = Lexer::new(input.to_string());
-        let mut interpreter = Interpreter::new(&mut lexer);
-        let result = interpreter.expr();
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        let result = interpreter.interpret();
         match result {
             Ok(value) => println!("{}", value),
             Err(e) => println!("{}", e),
