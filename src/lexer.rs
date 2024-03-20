@@ -1,4 +1,4 @@
-use crate::token::{Token, TokenKind};
+use crate::token::{Token, TokenKind, RESERVED_KEYWORDS};
 
 #[derive(Debug, Clone)]
 pub struct Lexer {
@@ -41,6 +41,30 @@ impl Lexer {
         result
     }
 
+    fn peek(&self) -> Option<char> {
+        let peek_pos = self.pos + 1;
+        if peek_pos > self.text.len() - 1 {
+            None
+        } else {
+            Some(self.text.chars().nth(peek_pos).unwrap())
+        }
+    }
+
+    fn id(&mut self) -> Token {
+        let mut result = String::new();
+        while self.current_char != '\0' && self.current_char.is_alphabetic() {
+            result.push(self.current_char);
+            self.advance();
+        }
+        for (kind, value) in crate::token::RESERVED_KEYWORDS.iter() {
+            if result == *value {
+                let kind = kind.clone();
+                return Token::new(kind, result);
+            }
+        }
+        Token::new(TokenKind::Identifier, result)
+    }
+
     pub fn get_next_token(&mut self) -> Option<Token> {
         while self.current_char != '\0' {
             if self.current_char.is_whitespace() {
@@ -49,6 +73,10 @@ impl Lexer {
             }
             if self.current_char.is_numeric() {
                 return Some(Token::new(TokenKind::Number, self.integer()));
+            }
+
+            if self.current_char.is_alphanumeric() {
+                return Some(self.id());
             }
 
             match self.current_char {
@@ -75,6 +103,19 @@ impl Lexer {
                 ')' => {
                     self.advance();
                     return Some(Token::new(TokenKind::RParen, ")".to_string()));
+                }
+                ':' if self.peek() == Some('=') => {
+                    self.advance();
+                    self.advance();
+                    return Some(Token::new(TokenKind::Assign, ":=".to_string()));
+                }
+                ';' => {
+                    self.advance();
+                    return Some(Token::new(TokenKind::Semi, ";".to_string()));
+                }
+                '.' => {
+                    self.advance();
+                    return Some(Token::new(TokenKind::Dot, ".".to_string()));
                 }
                 _ => {
                     return Some(Token::new(TokenKind::EOF, "".to_string()));

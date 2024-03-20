@@ -1,14 +1,14 @@
 use std::{error::Error, fmt};
 
 use crate::{
-    ast::{AstNode, BinaryOp, Num, UnaryOp},
+    ast::AstNode,
     parser::Parser,
-    token::TokenKind,
-    visitor::Visitor,
+    token::{Token, TokenKind},
 };
 
 pub struct Interpreter<'a> {
     pub parser: &'a mut Parser<'a>,
+    pub global_scope: std::collections::HashMap<String, i32>,
 }
 
 #[derive(Debug)]
@@ -24,36 +24,9 @@ impl fmt::Display for InterpreterError {
 
 impl Error for InterpreterError {}
 
-impl Visitor for Interpreter<'_> {
-    fn visit_binary_op(&mut self, binary_op: &BinaryOp) -> Result<i32, String> {
-        let left = self.visit(binary_op.left.clone())?;
-        let right = self.visit(binary_op.right.clone())?;
-        match binary_op.token.kind {
-            TokenKind::Plus => Ok(left + right),
-            TokenKind::Minus => Ok(left - right),
-            TokenKind::Multiply => Ok(left * right),
-            TokenKind::Divide => Ok(left / right),
-            _ => Err("Invalid operator".to_string()),
-        }
-    }
-
-    fn visit_num(&mut self, num: &Num) -> Result<i32, String> {
-        Ok(num.value)
-    }
-
-    fn visit_unary_op(&mut self, unary_op: &UnaryOp) -> Result<i32, String> {
-        let expr = self.visit(unary_op.expr.clone())?;
-        match unary_op.token.kind {
-            TokenKind::Plus => Ok(expr),
-            TokenKind::Minus => Ok(-expr),
-            _ => Err("Invalid operator".to_string()),
-        }
-    }
-}
-
 impl<'a> Interpreter<'a> {
     pub fn new(parser: &'a mut Parser<'a>) -> Interpreter<'a> {
-        Interpreter { parser }
+        Interpreter { parser, global_scope: std::collections::HashMap::new() }
     }
 
     pub fn interpret(&mut self) -> Result<i32, String> {
@@ -64,9 +37,71 @@ impl<'a> Interpreter<'a> {
         }
     }
 
+    fn visit_binary_op(
+        &mut self,
+        left: AstNode,
+        right: AstNode,
+        token: Token,
+    ) -> Result<i32, String> {
+        let left = self.visit(left)?;
+        let right = self.visit(right)?;
+        match token.kind {
+            TokenKind::Plus => Ok(left + right),
+            TokenKind::Minus => Ok(left - right),
+            TokenKind::Multiply => Ok(left * right),
+            TokenKind::Divide => Ok(left / right),
+            _ => Err("Invalid token".to_string()),
+        }
+    }
+
+    fn visit_num(&mut self, num: i32) -> Result<i32, String> {
+        Ok(num)
+    }
+
+    fn visit_unary_op(&mut self, node: AstNode, token: Token) -> Result<i32, String> {
+        let node = self.visit(node)?;
+        match token.kind {
+            TokenKind::Plus => Ok(node),
+            TokenKind::Minus => Ok(-node),
+            _ => Err("Invalid token".to_string()),
+        }
+    }
+
+    fn visit_compound(&mut self, nodes: Vec<AstNode>) -> Result<i32, String> {
+        for node in nodes {
+            self.visit(node)?;
+        }
+        Ok(0)
+    }
+
+    fn visit_assignment(&mut self, left: AstNode, right: AstNode, _token: Token) -> Result<i32, String> {
+        let string = match left {
+            AstNode::Var(token) => token.value,
+            _ => return Err("Invalid token".to_string()),
+        };
+        let value = self.visit(right)?;
+        self.global_scope.insert(string, value);
+        Ok(value)
+    }
+
+    fn visit_var(&mut self, token: Token) -> Result<i32, String> {
+        let string = token.value;
+        match self.global_scope.get(&string) {
+            Some(value) => Ok(*value),
+            None => Err("Variable not found".to_string()),
+        }
+    }
+
     pub fn visit(&mut self, node: AstNode) -> Result<i32, String> {
-        let node = node.borrow();
-        node.accept(self)
+        match node {
+            AstNode::BinaryOp(left, right, token) => self.visit_binary_op(*left, *right, token),
+            AstNode::Num(num) => self.visit_num(num),
+            AstNode::UnaryOp(node, token) => self.visit_unary_op(*node, token),
+            AstNode::Compound(nodes) => self.visit_compound(nodes),
+            AstNode::Assign(left, right, token) => self.visit_assignment(*left, *right, token),
+            AstNode::Var(token) => self.visit_var(token),
+            AstNode::NoOp => Ok(0),
+        }
     }
 }
 
@@ -233,5 +268,14 @@ mod tests {
         let mut parser = Parser::new(&mut lexer);
         let mut interpreter = Interpreter::new(&mut parser);
         assert_eq!(interpreter.interpret().unwrap(), 10)
+    }
+
+    #[test]
+    fn test_assignment() {
+        let mut lexer = Lexer::new("BEGIN a := 5; END.".to_string());
+        let mut parser = Parser::new(&mut lexer);
+        let mut interpreter = Interpreter::new(&mut parser);
+        assert_eq!(interpreter.interpret().unwrap(), 0);
+        assert_eq!(interpreter.global_scope.get("a").unwrap(), &5)
     }
 }

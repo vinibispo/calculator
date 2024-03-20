@@ -1,11 +1,10 @@
 use std::io::{stdin, stdout, Write};
 
-mod token;
 mod ast;
+mod interpreter;
 mod lexer;
 mod parser;
-mod visitor;
-mod interpreter;
+mod token;
 
 use interpreter::Interpreter;
 use lexer::Lexer;
@@ -35,4 +34,3 @@ fn main() {
         }
     }
 }
-

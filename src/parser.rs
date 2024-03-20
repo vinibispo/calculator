@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use crate::ast::{AstNode, BinaryOp, Num, UnaryOp};
+use crate::ast::AstNode;
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
 
@@ -49,27 +49,111 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn program(&mut self) -> Result<AstNode, ParserError> {
+        let node: AstNode;
+        match self.current_token.clone() {
+            Some(token) => match token.kind {
+                TokenKind::Begin => {
+                    node = self.compound_statement()?;
+                    self.eat(TokenKind::Dot)?;
+                }
+                _ => node = self.expr()?,
+            },
+            None => return Err(ParserError {
+                message: "Unexpected end of input".to_string(),
+            }),
+        };
+        self.eat(TokenKind::EOF)?;
+        Ok(node)
+    }
+
+    fn compound_statement(&mut self) -> Result<AstNode, ParserError> {
+        self.eat(TokenKind::Begin)?;
+        let nodes = self.statement_list()?;
+        self.eat(TokenKind::End)?;
+        let root = AstNode::Compound(nodes);
+        Ok(root)
+    }
+
+    fn statement_list(&mut self) -> Result<Vec<AstNode>, ParserError> {
+        let node = self.statement()?;
+        let mut results = vec![node];
+        while let Some(token) = self.current_token.clone() {
+            if token.kind == TokenKind::Semi {
+                self.eat(TokenKind::Semi)?;
+                results.push(self.statement()?);
+            } else {
+                break;
+            }
+        }
+        Ok(results)
+    }
+
+    fn statement(&mut self) -> Result<AstNode, ParserError> {
+        if let Some(token) = self.current_token.clone() {
+            println!("{:?}", token);
+            match token.kind {
+                TokenKind::Begin => self.compound_statement(),
+                TokenKind::Identifier => self.assignment_statement(),
+                _ => self.empty(),
+            }
+        } else {
+            Err(ParserError {
+                message: "Unexpected end of input".to_string(),
+            })
+        }
+    }
+
+    fn empty(&mut self) -> Result<AstNode, ParserError> {
+        Ok(AstNode::NoOp)
+    }
+
+    fn assignment_statement(&mut self) -> Result<AstNode, ParserError> {
+        let left = self.variable()?;
+        let token = self.current_token.clone().unwrap();
+        self.eat(TokenKind::Assign)?;
+        let right = self.expr()?;
+        Ok(AstNode::Assign(Box::new(left), Box::new(right), token))
+    }
+
+    fn variable(&mut self) -> Result<AstNode, ParserError> {
+        if let Some(token) = self.current_token.clone() {
+            if token.kind == TokenKind::Identifier {
+                self.eat(TokenKind::Identifier)?;
+                Ok(AstNode::Var(token))
+            } else {
+                Err(ParserError {
+                    message: "Invalid syntax".to_string(),
+                })
+            }
+        } else {
+            Err(ParserError {
+                message: "Unexpected end of input".to_string(),
+            })
+        }
+    }
+
     fn factor(&mut self) -> Result<AstNode, ParserError> {
         if let Some(token) = self.current_token.clone() {
             match token.kind {
                 TokenKind::Plus => {
                     self.eat(TokenKind::Plus)?;
-                    Ok(UnaryOp::new(self.factor()?, token))
-                },
+                    Ok(AstNode::UnaryOp(Box::new(self.factor()?), token))
+                }
                 TokenKind::Minus => {
                     self.eat(TokenKind::Minus)?;
-                    Ok(UnaryOp::new(self.factor()?, token))
-                },
+                    Ok(AstNode::UnaryOp(Box::new(self.factor()?), token))
+                }
                 TokenKind::Number => {
                     self.eat(TokenKind::Number)?;
-                    Ok(Num::new(token))
-                },
+                    Ok(AstNode::Num(token.value.parse().unwrap()))
+                }
                 TokenKind::LParen => {
                     self.eat(TokenKind::LParen)?;
                     let result = self.expr()?;
                     self.eat(TokenKind::RParen)?;
                     Ok(result)
-                },
+                }
                 _ => Err(ParserError {
                     message: "Invalid syntax".to_string(),
                 }),
@@ -93,11 +177,11 @@ impl<'a> Parser<'a> {
             match token.kind {
                 TokenKind::Multiply => {
                     self.eat(TokenKind::Multiply)?;
-                    result = BinaryOp::new(result, self.factor()?, token);
+                    result = AstNode::BinaryOp(Box::new(result), Box::new(self.factor()?), token);
                 }
                 TokenKind::Divide => {
                     self.eat(TokenKind::Divide)?;
-                    result = BinaryOp::new(result, self.factor()?, token);
+                    result = AstNode::BinaryOp(Box::new(result), Box::new(self.factor()?), token);
                 }
                 _ => break,
             }
@@ -117,11 +201,11 @@ impl<'a> Parser<'a> {
             match token.kind {
                 TokenKind::Plus => {
                     self.eat(TokenKind::Plus)?;
-                    result = BinaryOp::new(result, self.term()?, token);
+                    result = AstNode::BinaryOp(Box::new(result), Box::new(self.term()?), token);
                 }
                 TokenKind::Minus => {
                     self.eat(TokenKind::Minus)?;
-                    result = BinaryOp::new(result, self.term()?, token);
+                    result = AstNode::BinaryOp(Box::new(result), Box::new(self.term()?), token);
                 }
                 _ => break,
             }
@@ -130,7 +214,15 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(&mut self) -> Result<AstNode, ParserError> {
-        self.expr()
+        let node = self.program()?;
+        if let Some(token) = self.current_token.clone() {
+            if token.kind != TokenKind::EOF {
+                return Err(ParserError {
+                    message: "Invalid syntax".to_string(),
+                });
+            }
+        }
+        Ok(node)
     }
 }
 
@@ -170,4 +262,11 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[test]
+    fn test_parser_with_assignment() {
+        let mut lexer = Lexer::new("BEGIN a := 5; END.".to_string());
+        let mut parser = Parser::new(&mut lexer);
+        let result = parser.parse();
+        assert!(result.is_ok());
+    }
 }

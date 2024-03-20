@@ -2,6 +2,8 @@ use std::fmt;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
+    Begin,
+    End,
     Number,
     Plus,
     Minus,
@@ -10,7 +12,13 @@ pub enum TokenKind {
     EOF,
     LParen,
     RParen,
+    Dot,
+    Identifier,
+    Assign,
+    Semi,
 }
+
+pub const RESERVED_KEYWORDS: [(TokenKind, &str); 2] = [(TokenKind::Begin, "BEGIN"), (TokenKind::End, "END")];
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token {
