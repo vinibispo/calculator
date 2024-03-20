@@ -1,6 +1,6 @@
 use std::{error::Error, fmt};
 
-use crate::ast::AstNode;
+use crate::ast::{AstNode, AstType};
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
 
@@ -9,7 +9,7 @@ pub struct Parser<'a> {
     pub current_token: Option<Token>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParserError {
     pub message: String,
 }
@@ -50,24 +50,114 @@ impl<'a> Parser<'a> {
     }
 
     fn program(&mut self) -> Result<AstNode, ParserError> {
+        // program: PROGRAM variable SEMI block DOT
+        // | BEGIN statement_list END
         let node: AstNode;
         match self.current_token.clone() {
             Some(token) => match token.kind {
+                TokenKind::Program => {
+                    self.eat(TokenKind::Program)?;
+                    let var_node = match self.variable()? {
+                        AstNode::Var(var_node) => var_node.value.parse::<String>(),
+                        _ => {
+                            return Err(ParserError {
+                                message: "Invalid syntax".to_string(),
+                            });
+                        }
+                    };
+                    self.eat(TokenKind::Semi)?;
+                    let block_node = self.block()?;
+                    node = AstNode::Program(var_node, Box::new(block_node));
+                    self.eat(TokenKind::Dot)?;
+                }
                 TokenKind::Begin => {
                     node = self.compound_statement()?;
                     self.eat(TokenKind::Dot)?;
                 }
                 _ => node = self.expr()?,
             },
-            None => return Err(ParserError {
-                message: "Unexpected end of input".to_string(),
-            }),
+            None => {
+                return Err(ParserError {
+                    message: "Unexpected end of input".to_string(),
+                })
+            }
         };
         self.eat(TokenKind::EOF)?;
         Ok(node)
     }
 
+    fn block(&mut self) -> Result<AstNode, ParserError> {
+        // block : declarations compound_statement
+        let declarations = self.declarations()?;
+        let compound_statement = self.compound_statement()?;
+        Ok(AstNode::Block(declarations, Box::new(compound_statement)))
+    }
+
+    fn declarations(&mut self) -> Result<Vec<AstNode>, ParserError> {
+        // declarations : VAR (variable_declaration SEMI)+
+        // | empty
+        let mut declarations = vec![];
+        if let Some(token) = self.current_token.clone() {
+            if token.kind == TokenKind::Var {
+                self.eat(TokenKind::Var)?;
+                while let Some(token) = self.current_token.clone() {
+                    if token.kind == TokenKind::Identifier {
+                        declarations.append(&mut self.variable_declaration()?);
+                        self.eat(TokenKind::Semi)?;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(declarations)
+    }
+
+    fn variable_declaration(&mut self) -> Result<Vec<AstNode>, ParserError> {
+        // variable_declaration : ID (COMMA ID)* COLON type_spec
+        let mut var_nodes = vec![AstNode::Var(self.current_token.clone().unwrap())];
+        self.eat(TokenKind::Identifier)?;
+        while let Some(token) = self.current_token.clone() {
+            match token.kind {
+                TokenKind::Comma => {
+                    self.eat(TokenKind::Comma)?;
+                    var_nodes.push(AstNode::Var(self.current_token.clone().unwrap()));
+                    self.eat(TokenKind::Identifier)?;
+                }
+                _ => break,
+            }
+        }
+        self.eat(TokenKind::Colon)?;
+        let type_node = self.type_spec()?;
+        let mut declarations = vec![];
+        for var_node in var_nodes {
+            let type_n = type_node.clone();
+            declarations.push(AstNode::VarDecl(Box::new(var_node), Box::new(type_n)));
+        }
+        Ok(declarations)
+    }
+
+    fn type_spec(&mut self) -> Result<AstNode, ParserError> {
+        // type_spec : INTEGER
+        // | REAL
+        let token = self.current_token.clone().unwrap();
+        match token.kind {
+            TokenKind::Integer => {
+                self.eat(TokenKind::Integer)?;
+                Ok(AstNode::Type(token))
+            }
+            TokenKind::Real => {
+                self.eat(TokenKind::Real)?;
+                Ok(AstNode::Type(token))
+            }
+            _ => Err(ParserError {
+                message: "Invalid syntax".to_string(),
+            }),
+        }
+    }
+
     fn compound_statement(&mut self) -> Result<AstNode, ParserError> {
+        // compound_statement: BEGIN statement_list END
         self.eat(TokenKind::Begin)?;
         let nodes = self.statement_list()?;
         self.eat(TokenKind::End)?;
@@ -76,12 +166,15 @@ impl<'a> Parser<'a> {
     }
 
     fn statement_list(&mut self) -> Result<Vec<AstNode>, ParserError> {
+        // statement_list : statement
+        // | statement SEMI statement_list
         let node = self.statement()?;
         let mut results = vec![node];
         while let Some(token) = self.current_token.clone() {
             if token.kind == TokenKind::Semi {
                 self.eat(TokenKind::Semi)?;
-                results.push(self.statement()?);
+                let other_node = self.statement()?;
+                results.push(other_node);
             } else {
                 break;
             }
@@ -91,7 +184,6 @@ impl<'a> Parser<'a> {
 
     fn statement(&mut self) -> Result<AstNode, ParserError> {
         if let Some(token) = self.current_token.clone() {
-            println!("{:?}", token);
             match token.kind {
                 TokenKind::Begin => self.compound_statement(),
                 TokenKind::Identifier => self.assignment_statement(),
@@ -105,10 +197,13 @@ impl<'a> Parser<'a> {
     }
 
     fn empty(&mut self) -> Result<AstNode, ParserError> {
+        // An empty production
         Ok(AstNode::NoOp)
     }
 
     fn assignment_statement(&mut self) -> Result<AstNode, ParserError> {
+        // assignment_statement : variable ASSIGN expr
+
         let left = self.variable()?;
         let token = self.current_token.clone().unwrap();
         self.eat(TokenKind::Assign)?;
@@ -117,6 +212,7 @@ impl<'a> Parser<'a> {
     }
 
     fn variable(&mut self) -> Result<AstNode, ParserError> {
+        // variable : ID
         if let Some(token) = self.current_token.clone() {
             if token.kind == TokenKind::Identifier {
                 self.eat(TokenKind::Identifier)?;
@@ -144,9 +240,13 @@ impl<'a> Parser<'a> {
                     self.eat(TokenKind::Minus)?;
                     Ok(AstNode::UnaryOp(Box::new(self.factor()?), token))
                 }
-                TokenKind::Number => {
-                    self.eat(TokenKind::Number)?;
-                    Ok(AstNode::Num(token.value.parse().unwrap()))
+                TokenKind::Integer => {
+                    self.eat(TokenKind::Integer)?;
+                    Ok(AstNode::Num(AstType::Integer(token.value.parse::<i32>())))
+                }
+                TokenKind::Real => {
+                    self.eat(TokenKind::Real)?;
+                    Ok(AstNode::Num(AstType::Real(token.value.parse::<f64>())))
                 }
                 TokenKind::LParen => {
                     self.eat(TokenKind::LParen)?;
@@ -154,9 +254,7 @@ impl<'a> Parser<'a> {
                     self.eat(TokenKind::RParen)?;
                     Ok(result)
                 }
-                _ => Err(ParserError {
-                    message: "Invalid syntax".to_string(),
-                }),
+                _ => self.variable(),
             }
         } else {
             Err(ParserError {
@@ -166,27 +264,26 @@ impl<'a> Parser<'a> {
     }
 
     fn term(&mut self) -> Result<AstNode, ParserError> {
-        let mut result = self.factor()?;
+        // term : factor ((MUL | DIV) factor)*
+        let mut node = self.factor()?;
         while let Some(token) = self.current_token.clone() {
-            if token.kind == TokenKind::EOF {
-                break;
-            }
-            if ![TokenKind::Multiply, TokenKind::Divide].contains(&token.kind) {
-                break;
-            }
             match token.kind {
                 TokenKind::Multiply => {
                     self.eat(TokenKind::Multiply)?;
-                    result = AstNode::BinaryOp(Box::new(result), Box::new(self.factor()?), token);
+                    node = AstNode::BinaryOp(Box::new(node), Box::new(self.factor()?), token);
                 }
-                TokenKind::Divide => {
-                    self.eat(TokenKind::Divide)?;
-                    result = AstNode::BinaryOp(Box::new(result), Box::new(self.factor()?), token);
+                TokenKind::FloatDivide => {
+                    self.eat(TokenKind::FloatDivide)?;
+                    node = AstNode::BinaryOp(Box::new(node), Box::new(self.factor()?), token);
+                }
+                TokenKind::IntegerDivide => {
+                    self.eat(TokenKind::IntegerDivide)?;
+                    node = AstNode::BinaryOp(Box::new(node), Box::new(self.factor()?), token);
                 }
                 _ => break,
             }
         }
-        Ok(result)
+        Ok(node)
     }
 
     fn expr(&mut self) -> Result<AstNode, ParserError> {
@@ -265,6 +362,36 @@ mod tests {
     #[test]
     fn test_parser_with_assignment() {
         let mut lexer = Lexer::new("BEGIN a := 5; END.".to_string());
+        let mut parser = Parser::new(&mut lexer);
+        let result = parser.parse();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parser_with_program() {
+        let mut lexer = Lexer::new(
+            "PROGRAM Part10; VAR number : INTEGER; a, b : INTEGER; y : REAL; BEGIN END."
+                .to_string(),
+        );
+        let mut parser = Parser::new(&mut lexer);
+        let result = parser.parse();
+        assert!(result.is_ok());
+    }
+    #[test]
+    fn test_parse_with_program_and_more_declarations() {
+        let string = "
+PROGRAM Part10;
+VAR
+   x, y, z : INTEGER;
+BEGIN {Part10}
+   BEGIN
+   x := 5;
+   y := x + 10;
+   z := y DIV 3;
+   END;
+END.  "
+            .to_string();
+        let mut lexer = Lexer::new(string);
         let mut parser = Parser::new(&mut lexer);
         let result = parser.parse();
         assert!(result.is_ok());

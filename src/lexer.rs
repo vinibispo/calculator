@@ -1,4 +1,4 @@
-use crate::token::{Token, TokenKind, RESERVED_KEYWORDS};
+use crate::token::{Token, TokenKind, TokenValue, RESERVED_KEYWORDS};
 
 #[derive(Debug, Clone)]
 pub struct Lexer {
@@ -32,13 +32,30 @@ impl Lexer {
         }
     }
 
-    fn integer(&mut self) -> String {
+    fn number(&mut self) -> Token {
         let mut result = String::new();
         while self.current_char != '\0' && self.current_char.is_numeric() {
             result.push(self.current_char);
             self.advance();
         }
-        result
+
+        if self.current_char == '.' {
+            result.push(self.current_char);
+            self.advance();
+            while self.current_char != '\0' && self.current_char.is_numeric() {
+                result.push(self.current_char);
+                self.advance();
+            }
+            Token::new(
+                TokenKind::Real,
+                TokenValue::Real(result.parse::<f64>().unwrap()),
+            )
+        } else {
+            Token::new(
+                TokenKind::Integer,
+                TokenValue::Int(result.parse::<i32>().unwrap()),
+            )
+        }
     }
 
     fn peek(&self) -> Option<char> {
@@ -52,17 +69,17 @@ impl Lexer {
 
     fn id(&mut self) -> Token {
         let mut result = String::new();
-        while self.current_char != '\0' && self.current_char.is_alphabetic() {
+        while self.current_char != '\0' && self.current_char.is_alphanumeric() {
             result.push(self.current_char);
             self.advance();
         }
-        for (kind, value) in crate::token::RESERVED_KEYWORDS.iter() {
+        for (kind, value) in RESERVED_KEYWORDS.iter() {
             if result == *value {
                 let kind = kind.clone();
-                return Token::new(kind, result);
+                return Token::new(kind, TokenValue::Str(result));
             }
         }
-        Token::new(TokenKind::Identifier, result)
+        Token::new(TokenKind::Identifier, TokenValue::Str(result))
     }
 
     pub fn get_next_token(&mut self) -> Option<Token> {
@@ -71,58 +88,105 @@ impl Lexer {
                 self.skip_whitespace();
                 continue;
             }
-            if self.current_char.is_numeric() {
-                return Some(Token::new(TokenKind::Number, self.integer()));
+
+            if self.current_char == '{' {
+                self.advance();
+                self.skip_comment();
+                continue;
             }
 
-            if self.current_char.is_alphanumeric() {
+            if self.current_char.is_alphabetic() {
                 return Some(self.id());
+            }
+
+            if self.current_char.is_numeric() {
+                return Some(self.number());
             }
 
             match self.current_char {
                 '+' => {
                     self.advance();
-                    return Some(Token::new(TokenKind::Plus, "+".to_string()));
+                    return Some(Token::new(
+                        TokenKind::Plus,
+                        TokenValue::Str("+".to_string()),
+                    ));
                 }
                 '-' => {
                     self.advance();
-                    return Some(Token::new(TokenKind::Minus, "-".to_string()));
+                    return Some(Token::new(
+                        TokenKind::Minus,
+                        TokenValue::Str("-".to_string()),
+                    ));
                 }
                 '*' => {
                     self.advance();
-                    return Some(Token::new(TokenKind::Multiply, "*".to_string()));
+                    return Some(Token::new(
+                        TokenKind::Multiply,
+                        TokenValue::Str("*".to_string()),
+                    ));
                 }
                 '/' => {
                     self.advance();
-                    return Some(Token::new(TokenKind::Divide, "/".to_string()));
+                    return Some(Token::new(
+                        TokenKind::FloatDivide,
+                        TokenValue::Str("/".to_string()),
+                    ));
                 }
                 '(' => {
                     self.advance();
-                    return Some(Token::new(TokenKind::LParen, "(".to_string()));
+                    return Some(Token::new(
+                        TokenKind::LParen,
+                        TokenValue::Str("(".to_string()),
+                    ));
                 }
                 ')' => {
                     self.advance();
-                    return Some(Token::new(TokenKind::RParen, ")".to_string()));
+                    return Some(Token::new(
+                        TokenKind::RParen,
+                        TokenValue::Str(")".to_string()),
+                    ));
                 }
                 ':' if self.peek() == Some('=') => {
                     self.advance();
                     self.advance();
-                    return Some(Token::new(TokenKind::Assign, ":=".to_string()));
+                    let symbol = TokenValue::Str(":=".to_string());
+                    return Some(Token::new(TokenKind::Assign, symbol));
+                }
+                ':' => {
+                    self.advance();
+                    let symbol = TokenValue::Str(":".to_string());
+                    return Some(Token::new(TokenKind::Colon, symbol));
                 }
                 ';' => {
                     self.advance();
-                    return Some(Token::new(TokenKind::Semi, ";".to_string()));
+                    let symbol = TokenValue::Str(";".to_string());
+                    return Some(Token::new(TokenKind::Semi, symbol));
                 }
                 '.' => {
                     self.advance();
-                    return Some(Token::new(TokenKind::Dot, ".".to_string()));
+                    let symbol = TokenValue::Str(".".to_string());
+                    return Some(Token::new(TokenKind::Dot, symbol));
+                }
+                ',' => {
+                    self.advance();
+                    let symbol = TokenValue::Str(",".to_string());
+                    return Some(Token::new(TokenKind::Comma, symbol));
                 }
                 _ => {
-                    return Some(Token::new(TokenKind::EOF, "".to_string()));
+                    let symbol = TokenValue::Str("".to_string());
+                    return Some(Token::new(TokenKind::EOF, symbol));
                 }
             }
         }
-        Some(Token::new(TokenKind::EOF, "".to_string()))
+        let symbol = TokenValue::Str("".to_string());
+        Some(Token::new(TokenKind::EOF, symbol))
+    }
+
+    fn skip_comment(&mut self) {
+        while self.current_char != '}' {
+            self.advance();
+        }
+        self.advance();
     }
 }
 
@@ -133,104 +197,98 @@ mod tests {
     fn test_lexer() {
         let mut lexer = Lexer::new("3 + 5".to_string());
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "3".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Plus);
-        assert_eq!(token.value, "+".to_string());
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "5".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::EOF);
-        assert_eq!(token.value, "".to_string());
     }
 
     #[test]
     fn test_lexer2() {
         let mut lexer = Lexer::new("3 + 5 * 2".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "3".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Plus);
-        assert_eq!(token.value, "+".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "5".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Multiply);
-        assert_eq!(token.value, "*".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "2".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::EOF);
-        assert_eq!(token.value, "".to_string());
     }
 
     #[test]
     fn test_lexer3() {
         let mut lexer = Lexer::new("3 + 5 * 2 - 1".to_string());
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "3".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Plus);
-        assert_eq!(token.value, "+".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "5".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Multiply);
-        assert_eq!(token.value, "*".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "2".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Minus);
-        assert_eq!(token.value, "-".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "1".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::EOF);
-        assert_eq!(token.value, "".to_string());
     }
 
     #[test]
     fn test_lexer4() {
         let mut lexer = Lexer::new("3 + 5 * 2 - 1 / 2".to_string());
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "3".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Plus);
-        assert_eq!(token.value, "+".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "5".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Multiply);
-        assert_eq!(token.value, "*".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "2".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Minus);
-        assert_eq!(token.value, "-".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "1".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Divide);
-        assert_eq!(token.value, "/".to_string());
+        assert_eq!(token.kind, TokenKind::FloatDivide);
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "2".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::EOF);
-        assert_eq!(token.value, "".to_string());
     }
 
     #[test]
@@ -238,64 +296,94 @@ mod tests {
         let mut lexer = Lexer::new("7 + 3 * (10 / (12 / (3 + 1) - 1))".to_string());
 
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "7".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Plus);
-        assert_eq!(token.value, "+".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "3".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Multiply);
-        assert_eq!(token.value, "*".to_string());
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::LParen);
-        assert_eq!(token.value, "(".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "10".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Divide);
-        assert_eq!(token.value, "/".to_string());
-        let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::LParen);
-        assert_eq!(token.value, "(".to_string());
-        let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "12".to_string());
-        let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Divide);
-        assert_eq!(token.value, "/".to_string());
+        assert_eq!(token.kind, TokenKind::FloatDivide);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::LParen);
-        assert_eq!(token.value, "(".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "3".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::FloatDivide);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::LParen);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Plus);
-        assert_eq!(token.value, "+".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "1".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::RParen);
-        assert_eq!(token.value, ")".to_string());
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::Minus);
-        assert_eq!(token.value, "-".to_string());
+
         let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::Number);
-        assert_eq!(token.value, "1".to_string());
-        let token = lexer.get_next_token().unwrap();
-        assert_eq!(token.kind, TokenKind::RParen);
-        assert_eq!(token.value, ")".to_string());
+        assert_eq!(token.kind, TokenKind::Integer);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::RParen);
-        assert_eq!(token.value, ")".to_string());
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::RParen);
+
         let token = lexer.get_next_token().unwrap();
         assert_eq!(token.kind, TokenKind::EOF);
-        assert_eq!(token.value, "".to_string());
+    }
+
+    #[test]
+    fn test_with_program() {
+        let mut lexer = Lexer::new("PROGRAM Part10; VAR Integer : INTEGER;".to_string());
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Program);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Identifier);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Semi);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Var);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Identifier);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Colon);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Integer);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::Semi);
+
+        let token = lexer.get_next_token().unwrap();
+        assert_eq!(token.kind, TokenKind::EOF);
     }
 }
